@@ -39,12 +39,20 @@ def clean_artist_name(artist):
     # Normaliza acentos
     artist = unidecode.unidecode(artist)
     
-    # Si hay múltiples artistas separados por &, /, o "y", toma solo el primero
-    separators = [' & ', ' and ', ' y ', ' / ', ', ']
-    for sep in separators:
-        if sep in artist.lower():
-            artist = artist.split(sep)[0].strip()
-            break
+def clean_artist_name(artist):
+    """Limpia nombres de artistas para mejorar búsquedas."""
+    if pd.isna(artist):
+        return ""
+    
+    artist = str(artist).strip()
+    
+    # Normaliza acentos
+    artist = unidecode.unidecode(artist)
+    
+    # Si hay múltiples artistas separados por &, "and", "y", "/" o "," toma solo el primero
+    parts = re.split(r'\s*(?:&|/|,|\band\b|\by\b)\s*', artist, maxsplit=1, flags=re.IGNORECASE)
+    if parts:
+        artist = parts[0].strip()
     
     return artist
 
