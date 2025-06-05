@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Rellena la columna 'AÑO DE LANZAMIENTO' en un CSV musical usando MusicBrainz - Versión mejorada."""
+"""Rellena la columna 'AÑO DE LANZAMIENTO' en un CSV musical usando MusicBrainz.
+
+El script lee el archivo CSV especificado, consulta MusicBrainz y completa
+aquellas filas en las que falte el año de lanzamiento. Las filas que ya
+contengan el año no se modifican.  Puede ejecutarse sobre un archivo nuevo o
+sobre uno parcialmente completado.
+"""
 import pandas as pd
 import musicbrainzngs
 import unidecode
 import time
 import argparse
+import tempfile
+import os
 import re
 
 # Identifícate para cumplir las políticas de MusicBrainz
@@ -39,22 +47,21 @@ def clean_artist_name(artist):
     # Normaliza acentos
     artist = unidecode.unidecode(artist)
     
-def clean_artist_name(artist):
-    """Limpia nombres de artistas para mejorar búsquedas."""
-    if pd.isna(artist):
-        return ""
-    
-    artist = str(artist).strip()
-    
-    # Normaliza acentos
-    artist = unidecode.unidecode(artist)
-    
     # Si hay múltiples artistas separados por &, "and", "y", "/" o "," toma solo el primero
     parts = re.split(r'\s*(?:&|/|,|\band\b|\by\b)\s*', artist, maxsplit=1, flags=re.IGNORECASE)
     if parts:
         artist = parts[0].strip()
     
     return artist
+
+def is_year_missing(value):
+    """Devuelve True si el valor de año es vacío o no válido."""
+    if pd.isna(value):
+        return True
+    text = str(value).strip().lower()
+    if text in ("", "nan"):
+        return True
+    return False
 
 def search_release_year(title, artist):
     """Busca el año de lanzamiento usando múltiples estrategias."""
@@ -191,7 +198,7 @@ def process_file(input_path, output_path, batch_sleep=1.0):
         for idx in chunk.index:
             # Verifica si ya tiene año
             current_year = chunk.at[idx, year_column]
-            if pd.notna(current_year) and str(current_year).strip() != "" and str(current_year) != "nan":
+            if not is_year_missing(current_year):
                 continue
             
             title = str(chunk.at[idx, title_column]).strip()
@@ -232,18 +239,27 @@ if __name__ == "__main__":
     parser.add_argument("input", help="Ruta al CSV original")
     parser.add_argument("-o", "--output", help="CSV de salida (por defecto: agrega '_con_años' al nombre original)")
     parser.add_argument("--sleep", type=float, default=1.0, help="Segundos de espera entre llamadas (>=1 s recomendado)")
+    parser.add_argument("--inplace", action="store_true", help="Sobrescribe el archivo de entrada")
     args = parser.parse_args()
     
-    # Genera nombre de salida automáticamente si no se especifica
-    if not args.output:
-        import os
-        base_name = os.path.splitext(args.input)[0]
-        extension = os.path.splitext(args.input)[1]
-        args.output = f"{base_name}_con_años{extension}"
-    
+    if args.inplace:
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+        temp_path = temp_file.name
+        temp_file.close()
+        output_path = temp_path
+    else:
+        if not args.output:
+            base_name = os.path.splitext(args.input)[0]
+            extension = os.path.splitext(args.input)[1]
+            args.output = f"{base_name}_con_años{extension}"
+        output_path = args.output
+
     print("🎵 Iniciando procesamiento de base musical...")
     print(f"📂 Archivo entrada: {args.input}")
-    print(f"📂 Archivo salida: {args.output}")
+    print(f"📂 Archivo salida: {output_path if not args.inplace else args.input}")
     print(f"⏱️  Pausa entre búsquedas: {args.sleep} segundos")
-    
-    process_file(args.input, args.output, args.sleep)
+
+    process_file(args.input, output_path, args.sleep)
+
+    if args.inplace:
+        os.replace(output_path, args.input)
